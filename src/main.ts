@@ -144,6 +144,34 @@ function calculateSeries(
     .map(([temperature, count]) => ({ temperature, hours: count / years }));
 }
 
+function cumulativeHours(series: SeriesPoint[], temperature: number): number {
+  return series
+    .filter((point) => point.temperature <= temperature)
+    .reduce((total, point) => total + point.hours, 0);
+}
+
+function climateTooltipLabel(
+  context: {
+    chart?: { data: { labels?: unknown[] } };
+    dataset: { label?: string };
+    parsed: { y: number | null };
+    dataIndex: number;
+  },
+  series: CachedSeries,
+): string {
+  const temperature = Number(context.chart?.data.labels?.[context.dataIndex]);
+  const hours = Number(context.parsed.y).toFixed(1);
+  const source = context.dataset.label === "Gesamter Zeitraum"
+    ? series.all
+    : context.dataset.label === "Letzte 10 Jahre"
+      ? series.last10
+      : series.last5;
+  const cumulative = cumulativeHours(source, temperature);
+  const total = source.reduce((sum, point) => sum + point.hours, 0);
+  const percentage = total > 0 ? (cumulative / total) * 100 : 0;
+  return `${context.dataset.label}: ${hours} h/Jahr · ≤ ${temperature} °C: ${cumulative.toFixed(1)} h/Jahr (${percentage.toFixed(1)} %)`;
+}
+
 function calculateHeatLoadSeries(): SeriesPoint[] {
   const heatingLoad = Number(getInput("heating-load").value);
   const designTemperature = Number(getInput("design-temperature").value);
@@ -266,8 +294,12 @@ function updateChart(series: CachedSeries): void {
           },
           tooltip: {
             callbacks: {
-              label: (context) =>
-                `${context.dataset.label}: ${Number(context.parsed.y).toFixed(1)} ${context.dataset.yAxisID === "y-kilowatt" ? "kW" : "h/Jahr"}`,
+              label: (context) => {
+                if (context.dataset.yAxisID === "y-kilowatt") {
+                  return `${context.dataset.label}: ${Number(context.parsed.y).toFixed(1)} kW`;
+                }
+                return climateTooltipLabel(context, series);
+              },
             },
           },
         },
